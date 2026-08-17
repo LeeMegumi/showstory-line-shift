@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>上下班打卡</title>
+<meta property="og:title" content="上下班打卡">
+<meta property="og:description" content="GPS 定位打卡系統">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+<style>
+/* ══════════════════════════════════════════════════════════
+   設計 Token — 依 UI/UX Pro Max 規範
+   ══════════════════════════════════════════════════════════ */
+:root{
+  --color-primary:#2563EB;
+  --color-primary-dark:#1D4ED8;
+  --color-on-primary:#FFFFFF;
+  --color-accent:#EA580C;
+  --color-background:#F8FAFC;
+  --color-foreground:#1E293B;
+  --color-card:#FFFFFF;
+  --color-muted:#E9EFF8;
+  --color-muted-fg:#64748B;
+  --color-border:#E2E8F0;
+  --color-destructive:#DC2626;
+
+  --status-normal:#22C55E;
+  --status-late:#F59E0B;
+  --status-abnormal:#DC2626;
+
+  --font-sans:'Noto Sans TC',system-ui,-apple-system,sans-serif;
+  --font-mono:'Fira Code',ui-monospace,monospace;
+
+  --radius:12px;
+  --radius-sm:8px;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+  --shadow-md:0 4px 12px rgba(15,23,42,.08);
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+html,body{height:100%}
+
+body{
+  font-family:var(--font-sans);
+  background:var(--color-background);
+  color:var(--color-foreground);
+  font-size:16px;
+  line-height:1.5;
+  display:flex;
+  flex-direction:column;
+  min-height:100dvh;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.screen{
+  flex:1;
+  display:none;
+  flex-direction:column;
+  padding:20px 20px 32px;
+}
+.screen.active{display:flex}
+
+/* ── 頂部資訊 ─────────────────────────────────────────── */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:20px;
+}
+.who{display:flex;align-items:center;gap:10px;min-width:0}
+.avatar{
+  width:38px;height:38px;border-radius:50%;flex-shrink:0;
+  background:var(--color-muted);object-fit:cover;
+}
+.who-text{min-width:0}
+.who-name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who-meta{font-size:12px;color:var(--color-muted-fg)}
+
+.clock{text-align:right;flex-shrink:0}
+.clock-time{
+  font-family:var(--font-mono);font-size:26px;font-weight:600;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;
+}
+.clock-date{font-size:12px;color:var(--color-muted-fg);font-variant-numeric:tabular-nums}
+
+/* ── 派工卡 ───────────────────────────────────────────── */
+.duty-card{
+  background:linear-gradient(135deg,#2563EB,#1D4ED8);
+  color:#FFFFFF;border-radius:var(--radius);
+  padding:13px 16px;margin-bottom:12px;box-shadow:var(--shadow-md);
+}
+.duty-card.no-duty{background:#FEF3C7;color:#92400E;box-shadow:var(--shadow-sm)}
+.duty-head{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;opacity:.85;margin-bottom:5px;
+}
+.duty-head svg{width:14px;height:14px;flex-shrink:0}
+.duty-body{font-size:15px;font-weight:500;line-height:1.5}
+.duty-item{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.duty-item + .duty-item{margin-top:4px}
+.duty-item .time{
+  font-family:var(--font-mono);font-size:13px;opacity:.9;
+  font-variant-numeric:tabular-nums;
+}
+.duty-item .note{font-size:12px;opacity:.75}
+
+/* ── 狀態卡 ───────────────────────────────────────────── */
+.status-card{
+  background:var(--color-card);border:1px solid var(--color-border);
+  border-radius:var(--radius);padding:14px 16px;margin-bottom:20px;
+  box-shadow:var(--shadow-sm);
+}
+.status-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.status-row + .status-row{margin-top:10px;padding-top:10px;border-top:1px solid var(--color-border)}
+.status-label{font-size:13px;color:var(--color-muted-fg);display:flex;align-items:center;gap:6px}
+.status-value{
+  font-family:var(--font-mono);font-size:15px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.status-value.empty{color:var(--color-muted-fg);font-weight:400}
+
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:12px;font-weight:500;padding:3px 9px;border-radius:99px;
+  font-family:var(--font-sans);
+}
+.badge.working{background:#DCFCE7;color:#15803D}
+.badge.off{background:var(--color-muted);color:var(--color-muted-fg)}
+.badge.break{background:#FEF3C7;color:#B45309}
+
+/* ── 主按鈕 ───────────────────────────────────────────── */
+.punch-area{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;
+  padding:12px 0;
+}
+
+.punch-btn{
+  width:220px;height:220px;max-width:62vw;max-height:62vw;
+  border-radius:50%;border:none;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  font-family:var(--font-sans);color:var(--color-on-primary);
+  background:var(--color-primary);
+  box-shadow:0 8px 24px rgba(37,99,235,.32);
+  transition:transform .18s ease-out,box-shadow .18s ease-out,background .18s ease-out;
+}
+.punch-btn:active:not(:disabled){transform:scale(.96);box-shadow:0 4px 14px rgba(37,99,235,.28)}
+.punch-btn:focus-visible{outline:3px solid var(--color-primary);outline-offset:4px}
+.punch-btn:disabled{background:#94A3B8;box-shadow:none;cursor:not-allowed;opacity:.7}
+.punch-btn[data-type="clock_out"]{
+  background:var(--color-accent);box-shadow:0 8px 24px rgba(234,88,12,.32);
+}
+.punch-btn[data-type="clock_out"]:active:not(:disabled){box-shadow:0 4px 14px rgba(234,88,12,.28)}
+
+.punch-btn svg{width:44px;height:44px;stroke-width:1.75}
+.punch-btn-label{font-size:26px;font-weight:700;letter-spacing:.04em}
+.punch-btn-sub{font-size:12px;opacity:.86;font-weight:400}
+
+/* ── 定位狀態 ─────────────────────────────────────────── */
+.geo-status{
+  display:flex;align-items:center;gap:8px;
+  font-size:13px;color:var(--color-muted-fg);
+  background:var(--color-card);border:1px solid var(--color-border);
+  padding:8px 14px;border-radius:99px;min-height:36px;
+}
+.geo-status.ok{color:#15803D;border-color:#BBF7D0;background:#F0FDF4}
+.geo-status.warn{color:#B45309;border-color:#FDE68A;background:#FFFBEB}
+.geo-status .dot{
+  width:8px;height:8px;border-radius:50%;background:currentColor;flex-shrink:0;
+}
+.geo-status.locating .dot{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── 次要動作 ─────────────────────────────────────────── */
+.secondary-actions{display:flex;gap:10px;width:100%;max-width:340px}
+.btn-ghost{
+  flex:1;padding:11px 12px;border-radius:var(--radius-sm);
+  border:1px solid var(--color-border);background:var(--color-card);
+  color:var(--color-foreground);font-family:var(--font-sans);font-size:14px;
+  cursor:pointer;transition:background .15s ease-out;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  min-height:44px;
+}
+.btn-ghost:active{background:var(--color-muted)}
+.btn-ghost:disabled{opacity:.45;cursor:not-allowed}
+.btn-ghost svg{width:16px;height:16px}
+
+/* ── 今日紀錄 ─────────────────────────────────────────── */
+.timeline{width:100%;max-width:340px}
+.timeline-title{
+  font-size:12px;color:var(--color-muted-fg);
+  margin-bottom:8px;display:flex;align-items:center;gap:6px;
+}
+.timeline-list{
+  background:var(--color-card);border:1px solid var(--color-border);
+  border-radius:var(--radius-sm);overflow:hidden;
+}
+.timeline-item{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 13px;font-size:13px;
+}
+.timeline-item + .timeline-item{border-top:1px solid var(--color-border)}
+.timeline-item .t{
+  font-family:var(--font-mono);font-weight:600;
+  font-variant-numeric:tabular-nums;min-width:48px;
+}
+.timeline-item .tag{
+  font-size:11px;padding:2px 8px;border-radius:99px;
+  background:var(--color-muted);color:var(--color-muted-fg);
+}
+.timeline-item .tag.in{background:#DBEAFE;color:#1D4ED8}
+.timeline-item .tag.out{background:#FFEDD5;color:#C2410C}
+
+/* ── 大型狀態畫面（載入 / 結果 / 錯誤）────────────────── */
+.center-box{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px;
+}
+.icon-circle{
+  width:84px;height:84px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.icon-circle svg{width:44px;height:44px;stroke-width:2}
+.icon-circle.success{background:#DCFCE7;color:#15803D}
+.icon-circle.error{background:#FEE2E2;color:var(--color-destructive)}
+.icon-circle.info{background:var(--color-muted);color:var(--color-primary)}
+
+.center-title{font-size:22px;font-weight:700}
+.center-time{
+  font-family:var(--font-mono);font-size:42px;font-weight:600;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;
+}
+.center-text{
+  font-size:15px;color:var(--color-muted-fg);max-width:300px;
+  line-height:1.65;white-space:pre-line;   /* 讓後端訊息的換行生效 */
+}
+.center-meta{
+  font-size:12px;color:var(--color-muted-fg);font-family:var(--font-mono);
+  background:var(--color-muted);padding:5px 12px;border-radius:99px;
+}
+
+.spinner{
+  width:38px;height:38px;border:3px solid var(--color-border);
+  border-top-color:var(--color-primary);border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.btn-primary{
+  padding:13px 30px;border-radius:var(--radius-sm);border:none;
+  background:var(--color-primary);color:var(--color-on-primary);
+  font-family:var(--font-sans);font-size:16px;font-weight:500;
+  cursor:pointer;min-height:48px;min-width:140px;
+  transition:background .15s ease-out;
+}
+.btn-primary:active{background:var(--color-primary-dark)}
+
+/* ── 綁定畫面 ─────────────────────────────────────────── */
+.field{width:100%;max-width:280px;text-align:left}
+.field label{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
+.field input{
+  width:100%;padding:13px 14px;font-size:20px;
+  font-family:var(--font-mono);letter-spacing:.22em;text-align:center;
+  border:1px solid var(--color-border);border-radius:var(--radius-sm);
+  background:var(--color-card);color:var(--color-foreground);
+  text-transform:uppercase;min-height:52px;
+}
+.field input:focus{outline:2px solid var(--color-primary);outline-offset:1px;border-color:var(--color-primary)}
+.field .helper{font-size:12px;color:var(--color-muted-fg);margin-top:6px}
+.field .error{font-size:13px;color:var(--color-destructive);margin-top:6px;display:none}
+.field .error.show{display:block}
+
+/* ── 動效降級 ─────────────────────────────────────────── */
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+
+/* ── 深色模式 ─────────────────────────────────────────── */
+@media (prefers-color-scheme:dark){
+  :root{
+    --color-background:#0F172A;
+    --color-foreground:#E2E8F0;
+    --color-card:#1E293B;
+    --color-muted:#334155;
+    --color-muted-fg:#94A3B8;
+    --color-border:#334155;
+  }
+  .badge.working{background:#14532D;color:#86EFAC}
+  .badge.break{background:#78350F;color:#FCD34D}
+  .icon-circle.success{background:#14532D;color:#86EFAC}
+  .icon-circle.error{background:#7F1D1D;color:#FCA5A5}
+  .geo-status.ok{background:#14532D;border-color:#166534;color:#86EFAC}
+  .geo-status.warn{background:#78350F;border-color:#92400E;color:#FCD34D}
+  .timeline-item .tag.in{background:#1E3A8A;color:#BFDBFE}
+  .timeline-item .tag.out{background:#7C2D12;color:#FED7AA}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════ 載入中 ══════════ -->
+<section class="screen active" id="screen-loading">
+  <div class="center-box">
+    <div class="spinner" role="status" aria-label="載入中"></div>
+    <p class="center-text" id="loading-text">正在啟動…</p>
+  </div>
+</section>
+
+<!-- ══════════ 主畫面 ══════════ -->
+<section class="screen" id="screen-main">
+  <div class="topbar">
+    <div class="who">
+      <img class="avatar" id="avatar" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+      <div class="who-text">
+        <div class="who-name" id="emp-name">—</div>
+        <div class="who-meta" id="emp-meta">—</div>
+      </div>
+    </div>
+    <div class="clock">
+      <div class="clock-time" id="live-clock">--:--</div>
+      <div class="clock-date" id="live-date">—</div>
+    </div>
+  </div>
+
+  <div class="duty-card" id="duty-card">
+    <div class="duty-head">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>
+      </svg>
+      <span>今日派工</span>
+    </div>
+    <div class="duty-body" id="duty-body">—</div>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">目前狀態</span>
+      <span class="badge off" id="work-badge">尚未上班</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">上班時間</span>
+      <span class="status-value empty" id="stat-in">—</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">下班時間</span>
+      <span class="status-value empty" id="stat-out">—</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">今日工時</span>
+      <span class="status-value" id="stat-work">0 分</span>
+    </div>
+  </div>
+
+  <div class="punch-area">
+    <button class="punch-btn" id="punch-btn" data-type="clock_in" disabled>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+      </svg>
+      <span class="punch-btn-label" id="punch-label">上班</span>
+      <span class="punch-btn-sub" id="punch-sub">點擊打卡</span>
+    </button>
+
+    <div class="geo-status locating" id="geo-status" role="status" aria-live="polite">
+      <span class="dot"></span><span id="geo-text">準備定位…</span>
+    </div>
+
+    <div class="secondary-actions">
+      <button class="btn-ghost" id="btn-refresh">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+        </svg>
+        重新定位
+      </button>
+      <button class="btn-ghost" id="btn-history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/>
+        </svg>
+        本月紀錄
+      </button>
+    </div>
+
+    <div class="timeline" id="timeline" hidden>
+      <div class="timeline-title">今日打卡紀錄</div>
+      <div class="timeline-list" id="timeline-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 打卡中 ══════════ -->
+<section class="screen" id="screen-submitting">
+  <div class="center-box">
+    <div class="spinner" role="status" aria-label="處理中"></div>
+    <p class="center-title" id="submit-title">打卡中…</p>
+    <p class="center-text" id="submit-text">正在確認你的位置</p>
+  </div>
+</section>
+
+<!-- ══════════ 成功 ══════════ -->
+<section class="screen" id="screen-success">
+  <div class="center-box">
+    <div class="icon-circle success">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 6 9 17l-5-5"/>
+      </svg>
+    </div>
+    <p class="center-title" id="success-title">上班打卡成功</p>
+    <p class="center-time" id="success-time">--:--</p>
+    <p class="center-text" id="success-text"></p>
+    <p class="center-meta" id="success-meta"></p>
+  </div>
+</section>
+
+<!-- ══════════ 錯誤 ══════════ -->
+<section class="screen" id="screen-error">
+  <div class="center-box">
+    <div class="icon-circle error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/>
+      </svg>
+    </div>
+    <p class="center-title" id="error-title">打卡失敗</p>
+    <p class="center-text" id="error-text"></p>
+    <button class="btn-primary" id="btn-error-back">回到打卡頁</button>
+  </div>
+</section>
+
+<!-- ══════════ 綁定 ══════════ -->
+<section class="screen" id="screen-bind">
+  <div class="center-box">
+    <div class="icon-circle info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M15 7h3a5 5 0 0 1 0 10h-3M9 17H6A5 5 0 0 1 6 7h3M8 12h8"/>
+      </svg>
+    </div>
+    <p class="center-title">首次使用，請先綁定</p>
+    <p class="center-text">請輸入管理員提供的 6 碼綁定碼</p>
+    <div class="field">
+      <label for="bind-input">綁定碼</label>
+      <input id="bind-input" type="text" inputmode="latin" autocomplete="off"
+             maxlength="6" placeholder="ABC123" aria-describedby="bind-help">
+      <p class="helper" id="bind-help">不分大小寫，只需綁定一次</p>
+      <p class="error" id="bind-error" role="alert"></p>
+    </div>
+    <button class="btn-primary" id="btn-bind">確認綁定</button>
+  </div>
+</section>
+
+<!-- ══════════ 月報 ══════════ -->
+<section class="screen" id="screen-history">
+  <div class="topbar">
+    <div class="who"><div class="who-text">
+      <div class="who-name" id="hist-title">本月出勤</div>
+      <div class="who-meta" id="hist-sub">—</div>
+    </div></div>
+  </div>
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">出勤天數</span>
+      <span class="status-value" id="hist-days">0</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">累計工時</span>
+      <span class="status-value" id="hist-work">0 分</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">累計加班</span>
+      <span class="status-value" id="hist-ot">0 分</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">異常天數</span>
+      <span class="status-value" id="hist-abnormal">0</span>
+    </div>
+  </div>
+  <div class="timeline" style="max-width:none">
+    <div class="timeline-title">每日明細</div>
+    <div class="timeline-list" id="hist-list"></div>
+  </div>
+  <div style="margin-top:20px">
+    <button class="btn-primary" id="btn-hist-back" style="width:100%">返回</button>
+  </div>
+</section>
+
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   設定 — 部署前請修改這兩個值
+   ══════════════════════════════════════════════════════════ */
+const LIFF_ID  = '<請填入 LIFF ID>';
+const API_URL  = 'https://script.google.com/macros/s/AKfycbxjQwt2VHbo5CBfm59rulCvS9aAEXPG1bh128eZoxpMoTZJUUycpZ3TZyizbYvLq86E/exec';   // 結尾是 /exec
+
+/* ══════════════════════════════════════════════════════════
+   狀態
+   ══════════════════════════════════════════════════════════ */
+const state = {
+  idToken: null,
+  profile: null,
+  position: null,
+  status: null,
+  canPunch: true,
+  busy: false
+};
+
+const $ = id => document.getElementById(id);
+
+function show(screenId){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(screenId).classList.add('active');
+}
+
+/* ══════════════════════════════════════════════════════════
+   API — 用 text/plain 避免觸發 CORS 預檢，GAS 不處理 OPTIONS
+   ══════════════════════════════════════════════════════════ */
+async function api(payload){
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload),
+    redirect: 'follow'
+  });
+  if (!res.ok) {
+    throw { code:'NETWORK', message:'無法連線到伺服器（' + res.status + '），請檢查網路後再試。' };
+  }
+  const data = await res.json();
+  if (!data.ok) throw data;
+  return data;
+}
+
+/* ══════════════════════════════════════════════════════════
+   定位
+   ══════════════════════════════════════════════════════════ */
+function getPosition(){
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject({ code:'NO_GEO', message:'此裝置不支援定位功能。' });
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      }),
+      err => {
+        const msgs = {
+          1: '你拒絕了位置權限。請到手機「設定 → LINE → 位置」開啟權限後重試。',
+          2: '無法取得目前位置，請確認已開啟裝置的定位服務（GPS）。',
+          3: '定位逾時。請走到窗邊或戶外，再試一次。'
+        };
+        reject({ code:'GEO_' + err.code, message: msgs[err.code] || '定位失敗，請稍後再試。' });
+      },
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }  // maximumAge:0 = 不使用快取座標
+    );
+  });
+}
+
+function setGeo(cls, text){
+  const el = $('geo-status');
+  el.className = 'geo-status ' + cls;
+  $('geo-text').textContent = text;
+}
+
+async function refreshPosition(){
+  if (state.canPunch === false){
+    setGeo('warn', '今日尚無派工，無法打卡');
+    $('punch-btn').disabled = true;
+    return;
+  }
+
+  setGeo('locating', '正在定位…');
+  $('punch-btn').disabled = true;
+  try {
+    const pos = await getPosition();
+    state.position = pos;
+    const acc = Math.round(pos.accuracy);
+    if (acc > 100) {
+      setGeo('warn', '定位精度不足（誤差 ' + acc + ' 公尺）');
+      $('punch-btn').disabled = true;
+    } else {
+      setGeo('ok', '定位完成（誤差約 ' + acc + ' 公尺）');
+      $('punch-btn').disabled = false;
+    }
+  } catch (e) {
+    state.position = null;
+    setGeo('warn', e.message);
+    $('punch-btn').disabled = true;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   畫面更新
+   ══════════════════════════════════════════════════════════ */
+function renderStatus(payload){
+  state.status = payload;
+  const s = payload.status;
+
+  $('emp-name').textContent = payload.employeeName || '—';
+  $('emp-meta').textContent = [payload.department, payload.employeeId]
+    .filter(Boolean).join(' · ') || '—';
+
+  // ── 今日派工 ──────────────────────────────────────────
+  const dutyCard = $('duty-card');
+  const duty = s.duty || { hasDuty:false, text:'今日尚無派工', items:[] };
+
+  if (duty.hasDuty && duty.items.length){
+    dutyCard.className = 'duty-card';
+    $('duty-body').innerHTML = duty.items.map(i =>
+      '<div class="duty-item">' +
+        '<span>' + esc(i.locationName) + '</span>' +
+        (i.timeText ? '<span class="time">' + esc(i.timeText) + '</span>' : '') +
+        (i.note ? '<span class="note">' + esc(i.note) + '</span>' : '') +
+      '</div>'
+    ).join('');
+  } else {
+    dutyCard.className = 'duty-card no-duty';
+    $('duty-body').textContent = '今天沒有安排派工，無法打卡。請聯絡管理員確認排班。';
+  }
+
+  const badge = $('work-badge');
+  if (s.isOnBreak){ badge.className = 'badge break'; badge.textContent = '休息中'; }
+  else if (s.isWorking){ badge.className = 'badge working'; badge.textContent = '上班中'; }
+  else { badge.className = 'badge off'; badge.textContent = s.lastOut ? '已下班' : '尚未上班'; }
+
+  setStat('stat-in',  s.firstIn);
+  setStat('stat-out', s.lastOut);
+  $('stat-work').textContent = s.workText || '0 分';
+
+  const btn = $('punch-btn');
+  btn.dataset.type = s.nextAction;
+  $('punch-label').textContent = s.nextAction === 'clock_out' ? '下班' : '上班';
+  $('punch-sub').textContent   = s.nextAction === 'clock_out' ? '點擊結束工作' : '點擊開始工作';
+
+  // 無派工就不能打卡
+  state.canPunch = s.canPunch !== false;
+  if (!state.canPunch){
+    btn.disabled = true;
+    $('punch-sub').textContent = '今日無派工';
+    setGeo('warn', '今日尚無派工，無法打卡');
+  }
+
+  // 今日紀錄
+  const tl = $('timeline');
+  if (s.records && s.records.length){
+    tl.hidden = false;
+    $('timeline-list').innerHTML = s.records.map(r =>
+      '<div class="timeline-item">' +
+        '<span class="t">' + esc(r.time) + '</span>' +
+        '<span class="tag ' + (r.type === 'clock_in' ? 'in' : r.type === 'clock_out' ? 'out' : '') + '">' +
+          esc(r.label) + '</span>' +
+      '</div>'
+    ).join('');
+  } else {
+    tl.hidden = true;
+  }
+}
+
+function setStat(id, value){
+  const el = $(id);
+  el.textContent = value || '—';
+  el.classList.toggle('empty', !value);
+}
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function startClock(){
+  const tick = () => {
+    const n = new Date();
+    const p = x => String(x).padStart(2,'0');
+    $('live-clock').textContent = p(n.getHours()) + ':' + p(n.getMinutes());
+    $('live-date').textContent =
+      (n.getMonth()+1) + '/' + n.getDate() + ' ' + '週日一二三四五六'[n.getDay()+1];
+  };
+  tick();
+  setInterval(tick, 10000);
+}
+
+/* ══════════════════════════════════════════════════════════
+   動作
+   ══════════════════════════════════════════════════════════ */
+async function doPunch(){
+  if (state.busy) return;
+  if (!state.position){ await refreshPosition(); if (!state.position) return; }
+
+  state.busy = true;
+  const type = $('punch-btn').dataset.type;
+  $('submit-title').textContent = (type === 'clock_out' ? '下班' : '上班') + '打卡中…';
+  $('submit-text').textContent  = '正在確認你的位置';
+  show('screen-submitting');
+
+  try {
+    // 重新取一次座標，確保是「按下按鈕當下」的位置
+    try { state.position = await getPosition(); } catch(_){}
+
+    const res = await api({
+      action:'punch',
+      idToken: state.idToken,
+      punchType: type,
+      lat: state.position.lat,
+      lng: state.position.lng,
+      accuracy: state.position.accuracy,
+      clientTs: new Date().toISOString(),
+      userAgent: navigator.userAgent
+    });
+
+    $('success-title').textContent = res.punchTypeLabel + '打卡成功';
+    $('success-time').textContent  = res.displayTime;
+    $('success-text').textContent  =
+      res.punchType === 'clock_out'
+        ? '今日工時 ' + res.summary.workText + '，辛苦了！'
+        : '已於 ' + res.locationName + ' 完成上班打卡';
+    $('success-meta').textContent  =
+      res.locationName + ' · 距離 ' + res.distanceM + 'm · 誤差 ' + res.accuracyM + 'm';
+    show('screen-success');
+
+    // 1.8 秒後自動關閉
+    setTimeout(() => {
+      if (liff.isInClient()) liff.closeWindow();
+      else { loadStatus(); show('screen-main'); }
+    }, 1800);
+
+  } catch (e) {
+    $('error-title').textContent = errorTitle(e.code);
+    $('error-text').textContent  = e.message || '發生未知錯誤。';
+    show('screen-error');
+  } finally {
+    state.busy = false;
+  }
+}
+
+function errorTitle(code){
+  return ({
+    OUT_OF_RANGE:'不在打卡範圍內',
+    LOW_ACCURACY:'定位精度不足',
+    DUPLICATE:'重複打卡',
+    INVALID_SEQUENCE:'打卡順序有誤',
+    NO_ASSIGNMENT:'今日無派工',
+    OFF_SCHEDULE:'不在派工時段內',
+    NOT_REGISTERED:'尚未綁定',
+    INACTIVE:'帳號已停用',
+    BUSY:'系統忙碌中',
+    NETWORK:'連線失敗'
+  })[code] || '打卡失敗';
+}
+
+async function loadStatus(){
+  const res = await api({ action:'status', idToken: state.idToken });
+  renderStatus(res);
+}
+
+async function doBind(){
+  const input = $('bind-input');
+  const errEl = $('bind-error');
+  const token = input.value.trim().toUpperCase();
+
+  errEl.classList.remove('show');
+
+  if (token.length !== 6){
+    errEl.textContent = '綁定碼為 6 碼，請確認後重新輸入。';
+    errEl.classList.add('show');
+    input.focus();
+    return;
+  }
+
+  const btn = $('btn-bind');
+  btn.disabled = true;
+  btn.textContent = '綁定中…';
+
+  try {
+    await api({ action:'bind', idToken: state.idToken, bindToken: token });
+    await loadStatus();
+    show('screen-main');
+    refreshPosition();
+  } catch (e) {
+    errEl.textContent = e.message || '綁定失敗，請再試一次。';
+    errEl.classList.add('show');
+    input.focus();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '確認綁定';
+  }
+}
+
+async function loadHistory(){
+  $('btn-history').disabled = true;
+  try {
+    const res = await api({ action:'history', idToken: state.idToken });
+    const t = res.totals;
+
+    $('hist-sub').textContent      = res.month + ' · ' + res.employeeName;
+    $('hist-days').textContent     = t.workDays + ' 天';
+    $('hist-work').textContent     = t.workText;
+    $('hist-ot').textContent       = t.overtimeText;
+    $('hist-abnormal').textContent = t.abnormalDays + ' 天';
+
+    const statusLabel = {
+      normal:'正常', missing_out:'缺下班卡', abnormal:'異常', absent:'未出勤', leave:'請假'
+    };
+    $('hist-list').innerHTML = res.days.length
+      ? res.days.map(d =>
+          '<div class="timeline-item">' +
+            '<span class="t">' + esc(d.date.slice(5)) + '</span>' +
+            '<span class="t">' + esc(d.firstIn || '--:--') + '</span>' +
+            '<span class="t">' + esc(d.lastOut || '--:--') + '</span>' +
+            '<span style="margin-left:auto;font-family:var(--font-mono);font-size:12px">' +
+              esc(d.workText) + '</span>' +
+            (d.status !== 'normal'
+              ? '<span class="tag">' + esc(statusLabel[d.status] || d.status) + '</span>'
+              : '') +
+          '</div>'
+        ).join('')
+      : '<div class="timeline-item" style="color:var(--color-muted-fg)">本月尚無出勤紀錄</div>';
+
+    show('screen-history');
+  } catch (e) {
+    $('error-title').textContent = '讀取失敗';
+    $('error-text').textContent  = e.message || '無法讀取紀錄。';
+    show('screen-error');
+  } finally {
+    $('btn-history').disabled = false;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   啟動
+   ══════════════════════════════════════════════════════════ */
+async function main(){
+  if (LIFF_ID.indexOf('請填入') >= 0 || API_URL.indexOf('請填入') >= 0){
+    $('loading-text').textContent = '尚未完成設定：請先在 index.html 填入 LIFF_ID 與 API_URL。';
+    return;
+  }
+
+  try {
+    $('loading-text').textContent = '正在啟動 LINE…';
+    await liff.init({ liffId: LIFF_ID, withLoginOnExternalBrowser: true });
+
+    if (!liff.isLoggedIn()){ liff.login(); return; }
+
+    state.idToken = liff.getIDToken();
+    if (!state.idToken){
+      $('loading-text').textContent = '無法取得身分憑證，請關閉後重新開啟。';
+      return;
+    }
+
+    const decoded = liff.getDecodedIDToken();   // 僅用於顯示，不送到後端
+    if (decoded && decoded.picture) $('avatar').src = decoded.picture;
+
+    startClock();
+
+    $('loading-text').textContent = '正在讀取出勤狀態…';
+    try {
+      await loadStatus();
+    } catch (e) {
+      if (e.code === 'NOT_REGISTERED'){ show('screen-bind'); $('bind-input').focus(); return; }
+      throw e;
+    }
+
+    show('screen-main');
+    refreshPosition();
+
+    // 若由圖文選單帶入指定類型（?type=clock_out），覆寫按鈕
+    const preset = new URLSearchParams(location.search).get('type');
+    if (preset === 'clock_in' || preset === 'clock_out'){
+      $('punch-btn').dataset.type = preset;
+      $('punch-label').textContent = preset === 'clock_out' ? '下班' : '上班';
+    }
+
+  } catch (e) {
+    $('loading-text').textContent = e.message || 'LIFF 初始化失敗，請關閉後重新開啟。';
+    console.error(e);
+  }
+}
+
+/* 事件綁定 */
+$('punch-btn').addEventListener('click', doPunch);
+$('btn-refresh').addEventListener('click', refreshPosition);
+$('btn-history').addEventListener('click', loadHistory);
+$('btn-bind').addEventListener('click', doBind);
+$('bind-input').addEventListener('keydown', e => { if (e.key === 'Enter') doBind(); });
+$('btn-error-back').addEventListener('click', () => {
+  show('screen-main');
+  loadStatus().catch(()=>{});
+  refreshPosition();
+});
+$('btn-hist-back').addEventListener('click', () => show('screen-main'));
+
+main();
+</script>
+</body>
+</html>
