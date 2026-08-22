@@ -272,7 +272,18 @@ body{
 .field input:focus{outline:2px solid var(--color-primary);outline-offset:1px;border-color:var(--color-primary)}
 .field .helper{font-size:12px;color:var(--color-muted-fg);margin-top:6px}
 .field .error{font-size:13px;color:var(--color-destructive);margin-top:6px;display:none}
-.field .error.show{display:block}
+.error{
+  font-size:13px;color:var(--color-destructive);display:none;
+  max-width:300px;line-height:1.6;white-space:pre-line;
+}
+.error.show{display:block}
+
+.btn-link{
+  background:none;border:none;color:var(--color-muted-fg);
+  font-family:var(--font-sans);font-size:13px;text-decoration:underline;
+  cursor:pointer;padding:8px 12px;min-height:40px;
+}
+.btn-link:active{color:var(--color-foreground)}
 
 /* ── 動效降級 ─────────────────────────────────────────── */
 @media (prefers-reduced-motion:reduce){
@@ -437,15 +448,56 @@ body{
       </svg>
     </div>
     <p class="center-title">首次使用，請先綁定</p>
-    <p class="center-text">請輸入管理員提供的 6 碼綁定碼</p>
-    <div class="field">
+    <p class="center-text" id="bind-intro">請輸入你的手機號碼，系統會比對公司名單</p>
+
+    <div class="field" id="bind-phone-field">
+      <label for="bind-phone">手機號碼</label>
+      <input id="bind-phone" type="tel" inputmode="numeric" autocomplete="tel"
+             maxlength="13" placeholder="0912345678" aria-describedby="bind-phone-help">
+      <p class="helper" id="bind-phone-help">請填公司登記的號碼，只需綁定一次</p>
+    </div>
+
+    <div class="field hidden" id="bind-token-field">
       <label for="bind-input">綁定碼</label>
       <input id="bind-input" type="text" inputmode="latin" autocomplete="off"
-             maxlength="6" placeholder="ABC123" aria-describedby="bind-help">
-      <p class="helper" id="bind-help">不分大小寫，只需綁定一次</p>
-      <p class="error" id="bind-error" role="alert"></p>
+             maxlength="6" placeholder="ABC123">
+      <p class="helper">管理員提供的 6 碼代碼</p>
     </div>
-    <button class="btn-primary" id="btn-bind">確認綁定</button>
+
+    <p class="error" id="bind-error" role="alert"></p>
+
+    <button class="btn-primary" id="btn-bind">送出</button>
+    <button class="btn-link" id="btn-bind-switch">改用綁定碼</button>
+  </div>
+</section>
+
+<!-- ══════════ 等待審核 ══════════ -->
+<section class="screen" id="screen-pending">
+  <div class="center-box">
+    <div class="icon-circle info">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+      </svg>
+    </div>
+    <p class="center-title">等待管理員核准</p>
+    <p class="center-text" id="pending-text"></p>
+    <p class="center-meta" id="pending-meta"></p>
+    <button class="btn-primary" id="btn-pending-refresh">重新檢查</button>
+    <p class="center-text" style="font-size:13px">核准後就可以開始打卡。若等太久請聯絡管理員。</p>
+  </div>
+</section>
+
+<!-- ══════════ 申請被拒 ══════════ -->
+<section class="screen" id="screen-rejected">
+  <div class="center-box">
+    <div class="icon-circle error">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>
+      </svg>
+    </div>
+    <p class="center-title">綁定申請未通過</p>
+    <p class="center-text" id="rejected-text"></p>
+    <button class="btn-primary" id="btn-rejected-retry">重新申請</button>
   </div>
 </section>
 
@@ -489,7 +541,7 @@ body{
 /* ══════════════════════════════════════════════════════════
    設定 — 部署前請修改這兩個值
    ══════════════════════════════════════════════════════════ */
-const LIFF_ID  = '2011099705-3OEmkuaz';
+const LIFF_ID  = '<請填入 LIFF ID>';
 const API_URL  = 'https://script.google.com/macros/s/AKfycbxjQwt2VHbo5CBfm59rulCvS9aAEXPG1bh128eZoxpMoTZJUUycpZ3TZyizbYvLq86E/exec';   // 結尾是 /exec
 
 /* ══════════════════════════════════════════════════════════
@@ -527,6 +579,11 @@ async function api(payload){
   const data = await res.json();
   if (!data.ok) throw data;
   return data;
+}
+
+/** 讓錯誤物件也能帶額外欄位（例如 employeeName） */
+function pick(o, k, d){
+  return (o && o[k] !== undefined) ? o[k] : d;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -742,6 +799,8 @@ function errorTitle(code){
     NO_ASSIGNMENT:'今日無派工',
     OFF_SCHEDULE:'不在派工時段內',
     NOT_REGISTERED:'尚未綁定',
+    PENDING_APPROVAL:'等待核准中',
+    BIND_LOCKED:'嘗試次數過多',
     INACTIVE:'帳號已停用',
     BUSY:'系統忙碌中',
     NETWORK:'連線失敗'
@@ -753,37 +812,132 @@ async function loadStatus(){
   renderStatus(res);
 }
 
-async function doBind(){
-  const input = $('bind-input');
-  const errEl = $('bind-error');
-  const token = input.value.trim().toUpperCase();
+/* ── 綁定 ─────────────────────────────────────────────── */
+let bindMode = 'phone';   // 'phone' 或 'token'
 
+function switchBindMode(){
+  bindMode = bindMode === 'phone' ? 'token' : 'phone';
+  const isPhone = bindMode === 'phone';
+
+  $('bind-phone-field').classList.toggle('hidden', !isPhone);
+  $('bind-token-field').classList.toggle('hidden', isPhone);
+  $('bind-intro').textContent = isPhone
+    ? '請輸入你的手機號碼，系統會比對公司名單'
+    : '請輸入管理員提供的 6 碼綁定碼';
+  $('btn-bind-switch').textContent = isPhone ? '改用綁定碼' : '改用手機號碼';
+  $('bind-error').classList.remove('show');
+  (isPhone ? $('bind-phone') : $('bind-input')).focus();
+}
+
+async function doBind(){
+  const errEl = $('bind-error');
   errEl.classList.remove('show');
 
-  if (token.length !== 6){
-    errEl.textContent = '綁定碼為 6 碼，請確認後重新輸入。';
-    errEl.classList.add('show');
-    input.focus();
-    return;
+  const payload = { action:'bind', idToken: state.idToken };
+  let input;
+
+  if (bindMode === 'phone'){
+    input = $('bind-phone');
+    const digits = input.value.replace(/[^\d+]/g, '');
+    if (digits.replace(/\D/g,'').length < 9){
+      errEl.textContent = '請輸入完整的手機號碼，例如 0912345678。';
+      errEl.classList.add('show');
+      input.focus();
+      return;
+    }
+    payload.phone = digits;
+  } else {
+    input = $('bind-input');
+    const token = input.value.trim().toUpperCase();
+    if (token.length !== 6){
+      errEl.textContent = '綁定碼為 6 碼，請確認後重新輸入。';
+      errEl.classList.add('show');
+      input.focus();
+      return;
+    }
+    payload.bindToken = token;
   }
 
   const btn = $('btn-bind');
   btn.disabled = true;
-  btn.textContent = '綁定中…';
+  btn.textContent = '送出中…';
 
   try {
-    await api({ action:'bind', idToken: state.idToken, bindToken: token });
+    const res = await api(payload);
+
+    if (res.state === 'pending'){
+      showPending(res);
+      return;
+    }
+
+    // 已完成綁定
     await loadStatus();
     show('screen-main');
     refreshPosition();
+    toastLike('綁定成功，歡迎 ' + (res.employeeName || '') + '！');
+
   } catch (e) {
     errEl.textContent = e.message || '綁定失敗，請再試一次。';
     errEl.classList.add('show');
     input.focus();
   } finally {
     btn.disabled = false;
-    btn.textContent = '確認綁定';
+    btn.textContent = '送出';
   }
+}
+
+function showPending(res){
+  $('pending-text').textContent =
+    '你已用「' + (res.employeeName || '') + '」的身分送出綁定申請。';
+  $('pending-meta').textContent = res.submittedAt
+    ? '送出時間 ' + res.submittedAt : '';
+  show('screen-pending');
+}
+
+async function checkBindState(){
+  const btn = $('btn-pending-refresh');
+  btn.disabled = true;
+  btn.textContent = '檢查中…';
+  try {
+    const res = await api({ action:'bindState', idToken: state.idToken });
+
+    if (res.state === 'bound'){
+      await loadStatus();
+      show('screen-main');
+      refreshPosition();
+      return;
+    }
+    if (res.state === 'rejected'){
+      $('rejected-text').textContent = res.note
+        ? '管理員的說明：' + res.note
+        : '管理員沒有留下說明，請直接聯絡管理員了解原因。';
+      show('screen-rejected');
+      return;
+    }
+    if (res.state === 'unbound'){
+      show('screen-bind');
+      return;
+    }
+    // 仍在等待
+    $('pending-meta').textContent =
+      (res.submittedAt ? '送出時間 ' + res.submittedAt + ' · ' : '') +
+      '尚未核准';
+  } catch (e) {
+    $('pending-meta').textContent = e.message || '查詢失敗';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '重新檢查';
+  }
+}
+
+/** 用成功畫面短暫顯示訊息 */
+function toastLike(msg){
+  $('success-title').textContent = msg;
+  $('success-time').textContent = '';
+  $('success-text').textContent = '';
+  $('success-meta').textContent = '';
+  show('screen-success');
+  setTimeout(() => { show('screen-main'); }, 1400);
 }
 
 async function loadHistory(){
@@ -856,7 +1010,15 @@ async function main(){
     try {
       await loadStatus();
     } catch (e) {
-      if (e.code === 'NOT_REGISTERED'){ show('screen-bind'); $('bind-input').focus(); return; }
+      if (e.code === 'NOT_REGISTERED'){
+        show('screen-bind');
+        $('bind-phone').focus();
+        return;
+      }
+      if (e.code === 'PENDING_APPROVAL'){
+        showPending({ employeeName: e.employeeName || '' });
+        return;
+      }
       throw e;
     }
 
@@ -881,7 +1043,16 @@ $('punch-btn').addEventListener('click', doPunch);
 $('btn-refresh').addEventListener('click', refreshPosition);
 $('btn-history').addEventListener('click', loadHistory);
 $('btn-bind').addEventListener('click', doBind);
+$('btn-bind-switch').addEventListener('click', switchBindMode);
 $('bind-input').addEventListener('keydown', e => { if (e.key === 'Enter') doBind(); });
+$('bind-phone').addEventListener('keydown', e => { if (e.key === 'Enter') doBind(); });
+$('btn-pending-refresh').addEventListener('click', checkBindState);
+$('btn-rejected-retry').addEventListener('click', () => {
+  $('bind-phone').value = '';
+  $('bind-error').classList.remove('show');
+  show('screen-bind');
+  $('bind-phone').focus();
+});
 $('btn-error-back').addEventListener('click', () => {
   show('screen-main');
   loadStatus().catch(()=>{});
