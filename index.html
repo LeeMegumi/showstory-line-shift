@@ -43,6 +43,8 @@
 
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 
+.hidden{display:none!important}
+
 html,body{height:100%}
 
 body{
@@ -545,12 +547,23 @@ body{
 // LIFF ID —— 已固定，不需修改
 const LIFF_ID  = '2011099705-3OEmkuaz';
 
-// ⚠️ GAS 網頁應用程式網址（打卡 API 那個部署，結尾 /exec）
+// 是否提供「改用綁定碼」的選項。
+//   false = 只能用手機號碼綁定（畫面上不會出現 6 碼欄位）
+//   true  = 多一個切換連結，給沒登記手機號碼的人備援用
+const ALLOW_TOKEN_BIND = false;
+
+// ⚠️ 這裡要填「打卡 API」那個部署的網址 —— 就是存取權設為「任何人」的那個。
+//
+//    絕對不能填成管理後台的網址！管理後台要求 Google 登入，
+//    員工在 LINE 內建瀏覽器沒有登入狀態，會直接打不了卡。
+//
+//    怎麼確認填對了：用「無痕視窗」開啟這個網址並在結尾加上 ?action=ping
+//      ✅ 看到 {"ok":true,"service":"LINE 打卡系統"...}  → 正確
+//      ❌ 跳出 Google 登入頁                              → 填成後台的了
 //
 //    這個網址「不應該」每次更新程式碼都變。
-//    正確做法：部署 → 管理部署作業 → 打卡 API 那筆 → 鉛筆 → 版本選「新版本」→ 部署
-//              網址不變，這裡就不用動。
-//    只有按「新增部署作業」才會產生新網址，那時才需要更新這一行。
+//    用「管理部署作業 → 編輯 → 版本選新版本」更新的話網址不變，這裡就不用動。
+//    只有按「新增部署作業」才會產生新網址。
 const API_URL  = 'https://script.google.com/macros/s/AKfycbxPwSSPw2RTjjrzPI-731FOMyD6yeRQnW_VbsZn2sqvCxwGxb_8uuQpvK_GBZTbMnGa/exec';
 
 /* ══════════════════════════════════════════════════════════
@@ -824,7 +837,19 @@ async function loadStatus(){
 /* ── 綁定 ─────────────────────────────────────────────── */
 let bindMode = 'phone';   // 'phone' 或 'token'
 
+/** 進入綁定畫面前先把版面調整好 */
+function setupBindScreen(){
+  bindMode = 'phone';
+  $('bind-phone-field').classList.remove('hidden');
+  $('bind-token-field').classList.add('hidden');
+  $('bind-error').classList.remove('show');
+  $('bind-intro').textContent = '請輸入你的手機號碼，系統會比對公司名單';
+  // 不開放綁定碼時，連切換連結都不顯示
+  $('btn-bind-switch').classList.toggle('hidden', !ALLOW_TOKEN_BIND);
+}
+
 function switchBindMode(){
+  if (!ALLOW_TOKEN_BIND) return;
   bindMode = bindMode === 'phone' ? 'token' : 'phone';
   const isPhone = bindMode === 'phone';
 
@@ -1020,6 +1045,7 @@ async function main(){
       await loadStatus();
     } catch (e) {
       if (e.code === 'NOT_REGISTERED'){
+        setupBindScreen();
         show('screen-bind');
         $('bind-phone').focus();
         return;
@@ -1058,7 +1084,7 @@ $('bind-phone').addEventListener('keydown', e => { if (e.key === 'Enter') doBind
 $('btn-pending-refresh').addEventListener('click', checkBindState);
 $('btn-rejected-retry').addEventListener('click', () => {
   $('bind-phone').value = '';
-  $('bind-error').classList.remove('show');
+  setupBindScreen();
   show('screen-bind');
   $('bind-phone').focus();
 });
