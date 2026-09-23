@@ -1153,7 +1153,15 @@ async function loadHistory(month){
 const schView = { month: null, min: null, max: null };
 
 async function loadSchedule(month){
-  schView.month = month || schView.month || thisMonth();
+  // 範圍在前端先算好並鎖住：前兩個月 ～ 下個月（伺服端也會再擋一次）
+  schView.min = addMonths(thisMonth(), -2);
+  schView.max = addMonths(thisMonth(), 1);
+  let m = month || schView.month || thisMonth();
+  if (m < schView.min) m = schView.min;
+  if (m > schView.max) m = schView.max;
+  schView.month = m;
+  $('sch-prev').disabled = schView.month <= schView.min;
+  $('sch-next').disabled = schView.month >= schView.max;
 
   $('btn-schedule').disabled = true;
   $('sch-list').innerHTML = '<div class="sch-item" style="color:var(--color-muted-fg)">載入中…</div>';
@@ -1163,8 +1171,6 @@ async function loadSchedule(month){
   try {
     const res = await api({ action:'schedule', idToken: state.idToken, month: schView.month });
 
-    schView.min = res.minMonth;
-    schView.max = res.maxMonth;
     $('sch-prev').disabled = schView.month <= schView.min;
     $('sch-next').disabled = schView.month >= schView.max;
 
@@ -1279,8 +1285,8 @@ $('btn-history').addEventListener('click', () => loadHistory(thisMonth()));
 $('hist-prev').addEventListener('click', () => loadHistory(addMonths(histView.month, -1)));
 $('hist-next').addEventListener('click', () => loadHistory(addMonths(histView.month, 1)));
 $('btn-schedule').addEventListener('click', () => loadSchedule(thisMonth()));
-$('sch-prev').addEventListener('click', () => loadSchedule(addMonths(schView.month, -1)));
-$('sch-next').addEventListener('click', () => loadSchedule(addMonths(schView.month, 1)));
+$('sch-prev').addEventListener('click', () => { if (schView.month > schView.min) loadSchedule(addMonths(schView.month, -1)); });
+$('sch-next').addEventListener('click', () => { if (schView.month < schView.max) loadSchedule(addMonths(schView.month, 1)); });
 $('btn-sch-back').addEventListener('click', () => show('screen-main'));
 $('btn-bind').addEventListener('click', doBind);
 $('btn-bind-switch').addEventListener('click', switchBindMode);
